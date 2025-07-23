@@ -24,6 +24,7 @@ const recaptchaSecret = defineSecret("RECAPTCHA_SECRET");
 const corsHandler = cors({
   origin: [
     "https://angular-dev-portfolio.web.app",
+    "https://andrewcarey.dev",
     "http://localhost:4200"
   ]
 });
