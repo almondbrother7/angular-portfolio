@@ -1,50 +1,35 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { EnvironmentService } from '../../services/environment.service';
-
-declare const grecaptcha: any;
+import { RecaptchaService } from '../../services/recaptcha.service';
 
 @Component({
   selector: 'app-contact',
   templateUrl: './contact.component.html',
-  styleUrls: ['./contact.component.css']
+  styleUrls: ['./contact.component.css'],
 })
 export class ContactComponent implements OnInit {
   isSubmitting = false;
   successMessage = '';
   errorMessage = '';
 
-  constructor(private env: EnvironmentService, private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private recaptcha: RecaptchaService
+  ) {}
 
   ngOnInit(): void {
-    this.loadRecaptchaScript();
+    this.recaptcha.loadRecaptchaScript();
   }
 
-  private loadRecaptchaScript() {
-    // Prevent duplicate script injection
-    if (document.querySelector(`script[src*="recaptcha/api.js"]`)) {
-      console.log('[Contact] reCAPTCHA script already present.');
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = `https://www.google.com/recaptcha/api.js?render=${this.env.recaptchaSiteKey}`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => console.log('[Contact] reCAPTCHA script loaded for key:', this.env.recaptchaSiteKey);
-    document.head.appendChild(script);
-  }
-
-  onSubmit(event: Event) {
+  async onSubmit(event: Event) {
     event.preventDefault();
 
     const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
 
-    // Honeypot anti-bot field
-    const honeypot = (form.querySelector('input[name="website"]') as HTMLInputElement)?.value;
-    if (honeypot) {
-      console.warn('Honeypot field filled - likely a bot.');
+    // Honeypot anti-bot
+    if ((form.querySelector('input[name="website"]') as HTMLInputElement)?.value) {
+      console.warn('[Contact] Honeypot triggered');
       return;
     }
 
@@ -52,30 +37,26 @@ export class ContactComponent implements OnInit {
     this.successMessage = '';
     this.errorMessage = '';
 
-    grecaptcha.ready(() => {
-      grecaptcha.execute(this.env.recaptchaSiteKey, { action: 'contact_form' }).then((token: string) => {
-        fetch("/api/verifyRecaptcha", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ recaptchaToken: token })
-        })
-        .then(res => res.json())
-        .then(result => {
-          console.log(`[Contact] reCAPTCHA verification: success=${result.success} reason=${result.reason ?? 'OK'}`);
-          if (result.success) {
-            this.sendToFormspree(formData);
-          } else {
-            this.isSubmitting = false;
-            console.warn('reCAPTCHA verification failed:', result.reason);
-            this.errorMessage = 'Verification failed. Please try again or contact me directly.';
-          }
-        })
-        .catch(() => {
-          this.isSubmitting = false;
-          this.errorMessage = 'Error verifying reCAPTCHA.';
-        });
-      });
-    });
+    try {
+      // ✅ Get reCAPTCHA token safely
+      const token = await this.recaptcha.execute();
+      console.log('[Contact] Got reCAPTCHA token');
+
+      // ✅ Verify on backend
+      const result = await this.recaptcha.verifyToken(token);
+
+      if (result.success) {
+        this.sendToFormspree(formData);
+      } else {
+        this.isSubmitting = false;
+        console.warn('[Contact] reCAPTCHA failed:', result.reason);
+        this.errorMessage = `Verification failed: ${result.reason}`;
+      }
+    } catch (err) {
+      this.isSubmitting = false;
+      console.error('[Contact] reCAPTCHA error:', err);
+      this.errorMessage = 'Error executing reCAPTCHA. Please try again.';
+    }
   }
 
   private sendToFormspree(formData: FormData) {
@@ -87,7 +68,7 @@ export class ContactComponent implements OnInit {
       error: () => {
         this.isSubmitting = false;
         this.errorMessage = '❌ Something went wrong. Please try again later.';
-      }
+      },
     });
   }
 }

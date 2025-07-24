@@ -14,12 +14,10 @@ export class AppComponent {
 
   constructor(private breakpointObserver: BreakpointObserver) {}
 
-
   ngOnInit() {
     this.breakpointObserver.observe([Breakpoints.Handset, '(max-width: 768px)'])
       .subscribe(result => {
         this.isMobile = result.matches;
       });
   }
-
 }
