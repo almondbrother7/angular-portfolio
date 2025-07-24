@@ -19,7 +19,8 @@ interface RecaptchaResponse {
   "error-codes"?: string[];
 }
 
-const recaptchaSecret = defineSecret("RECAPTCHA_SECRET");
+// Using Secret Manager for portfolio key
+const recaptchaSecret = defineSecret("RECAPTCHA_PORTFOLIO_SECRET");
 
 const corsHandler = cors({
   origin: [
@@ -29,7 +30,7 @@ const corsHandler = cors({
   ]
 });
 
-export const verifyRecaptcha = onRequest(
+export const verifyRecaptchaPortfolio = onRequest(
   {
     secrets: [recaptchaSecret],
     region: "us-east1",
@@ -42,33 +43,58 @@ export const verifyRecaptcha = onRequest(
       const { recaptchaToken } = req.body;
 
       if (!recaptchaToken) {
+        console.warn("[verifyRecaptchaPortfolio] ❌ Missing token in request.");
         res.status(400).json({ success: false, reason: "Missing token" });
         return;
       }
 
       try {
-        const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+        console.log("[verifyRecaptchaPortfolio] Received request. Validating...");
+
+        const googleVerifyUrl = "https://www.google.com/recaptcha/api/siteverify";
+        const bodyParams = `secret=${recaptchaSecret.value()}&response=${recaptchaToken}`;
+
+        const response = await fetch(googleVerifyUrl, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `secret=${recaptchaSecret.value()}&response=${recaptchaToken}`,
+          body: bodyParams,
         });
 
-        const data: RecaptchaResponse = await response.json() as RecaptchaResponse;
-        console.log("[verifyRecaptcha] Full response:", data);
+        const rawText = await response.text();
+        let data: RecaptchaResponse;
 
-        const threshold = 0.5;
+        try {
+          data = JSON.parse(rawText) as RecaptchaResponse;
+        } catch (parseErr) {
+          console.error("[verifyRecaptchaPortfolio] ❌ Failed to parse Google response:", parseErr);
+          throw new Error(`Google returned non-JSON: ${rawText.slice(0, 50)}...`);
+        }
+
+        console.log(
+          `[verifyRecaptchaPortfolio] Google validation: success=${data.success}, score=${data.score ?? "N/A"}, hostname=${data.hostname ?? "N/A"}, action=${data.action ?? "N/A"}`
+        );
+
+        const threshold = 0.2;
         const isHuman = data.success && (data.score ?? 0) >= threshold;
 
         if (isHuman) {
+          console.log("[verifyRecaptchaPortfolio] ✅ Human verified (score:", data.score, ")");
           res.status(200).json({ success: true });
         } else {
+          console.warn(
+            "[verifyRecaptchaPortfolio] ❌ Verification failed",
+            data["error-codes"] || `Low score: ${data.score ?? "unknown"}`
+          );
           res.status(403).json({
             success: false,
             reason: data["error-codes"] || `Low score: ${data.score ?? "unknown"}`,
           });
         }
       } catch (error: unknown) {
-        console.error("[verifyRecaptcha] Error:", error);
+        console.error(
+          "[verifyRecaptchaPortfolio] ❌ Error during verification:",
+          error instanceof Error ? error.message : error
+        );
         res.status(500).json({
           success: false,
           reason: error instanceof Error ? error.message : "Unknown error",

@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "target": "portfolio",
     "public": "dist/angular-portfolio",
     "headers": [
       {
@@ -17,7 +18,7 @@
     "rewrites": [
       {
         "source": "/api/verifyRecaptcha",
-        "function": "verifyRecaptcha"
+        "function": "verifyRecaptchaPortfolio"
       },
       {
         "source": "**",

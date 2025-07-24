@@ -2,6 +2,14 @@
   "projects": {
     "default": "angular-dev-portfolio"
   },
-  "targets": {},
+  "targets": {
+    "angular-dev-portfolio": {
+      "hosting": {
+        "portfolio": [
+          "angular-dev-portfolio"
+        ]
+      }
+    }
+  },
   "etags": {}
 }
